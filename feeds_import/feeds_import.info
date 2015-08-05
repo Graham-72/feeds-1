@@ -1,0 +1,12 @@
+name = Feeds Import
+description = An example of a node importer and a user importer.
+package = Feeds
+backdrop = 1.x
+version = BACKDROP_VERSION
+type = module
+dependencies[] = feeds
+features[ctools][] = feeds:feeds_importer_default:1
+features[features_api][] = api:2
+features[feeds_importer][] = node
+features[feeds_importer][] = user
+

@@ -1,0 +1,9 @@
+name = Feeds Admin UI
+description = Administrative UI for Feeds module.
+package = Feeds
+package = Feeds
+backdrop = 1.x
+version = BACKDROP_VERSION
+type = module
+dependencies[] = feeds
+configure = admin/structure/feeds

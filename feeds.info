@@ -1,0 +1,7 @@
+name = Feeds
+description = Aggregates RSS/Atom/RDF feeds, imports CSV files and more.
+package = Feeds
+backdrop = 1.x
+version = BACKDROP_VERSION
+type = module
+dependencies[] = job_scheduler

@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * @file
+ * Empty module file.
+ */
+
+include_once('feeds_import.features.inc');
+
+/**
+ * Implements hook_config_info().
+ */
+function feeds_import_config_info() {
+  $prefixes['feeds_import.settings'] = array(
+    'label' => t('feeds_import settings'),
+    'group' => t('Configuration'),
+  );
+  return $prefixes;
+}
