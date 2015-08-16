@@ -179,8 +179,8 @@ function feeds_ui_importer_machine_name_exists($id) {
     // Create is a reserved path for the add importer form.
     return TRUE;
   }
-  ctools_include('export');
-  if (ctools_export_load_object('feeds_importer', 'conditions', array('id' => $id))) {
+  backdrop_tools_include('export');
+  if (backdrop_tools_export_load_object('feeds_importer', 'conditions', array('id' => $id))) {
     return TRUE;
   }
 }
@@ -301,7 +301,7 @@ function feeds_ui_edit_page(FeedsImporter $importer, $active = 'help', $plugin_k
 
     case 'settings':
       backdrop_add_js(backdrop_get_path('module', 'ctools') . '/js/dependent.js');
-      ctools_include('dependent');
+      backdrop_tools_include('dependent');
       if (empty($plugin_key)) {
         $active_container['title'] = t('Basic settings');
         $active_container['body'] = feeds_get_form($importer, 'configForm');

@@ -36,7 +36,7 @@ class FeedsNodeProcessor extends FeedsProcessor {
    * Creates a new node in memory and returns it.
    */
   protected function newEntity(FeedsSource $source) {
-    $node = new stdClass();
+    $node = entity_create('node', array());
     $node->type = $this->bundle();
     $node->changed = REQUEST_TIME;
     $node->created = REQUEST_TIME;
@@ -137,9 +137,10 @@ class FeedsNodeProcessor extends FeedsProcessor {
    */
   public function entitySave($entity) {
     // node_save($entity);
-$node = entity_create('node', array ('type' => 'page'));
-$node->uid = $user->uid;
-$node->save();
+    // global $user;
+    // $node = entity_create('node', array ('type' => 'page'));
+    // $node->uid = $user->uid;
+    $entity->save();
   }
 
   /**

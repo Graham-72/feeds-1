@@ -16,6 +16,8 @@ define('FEEDS_EXPORT_NONE', 0x0);
 // Status of batched operations.
 define('FEEDS_BATCH_COMPLETE', 1.0);
 define('FEEDS_BATCH_ACTIVE', 0.0);
+define('EXPORT_IN_DATABASE', 0x01);
+define('EXPORT_IN_CODE', 0x02);
 
 /**
  * @defgroup hooks Hook and callback implementations
@@ -758,14 +760,14 @@ function feeds_system_info_alter(array &$info, $file, $type) {
 
   // Don't make Feeds require itself, otherwise you can't disable Feeds until
   // all importers are deleted.
-  if ($file->name === 'feeds' || !function_exists('ctools_include')) {
+  if ($file->name === 'feeds' || !function_exists('backdrop_tools_include')) {
     return;
   }
 
   // Get the plugins that belong to the current module.
-  ctools_include('plugins');
+  backdrop_tools_include('plugins');
   $module_plugins = array();
-  foreach (ctools_get_plugins('feeds', 'plugins') as $plugin_id => $plugin) {
+  foreach (backdrop_tools_get_plugins('feeds', 'plugins') as $plugin_id => $plugin) {
     if ($file->name === $plugin['module']) {
       $module_plugins[$plugin_id] = TRUE;
     }
@@ -778,7 +780,7 @@ function feeds_system_info_alter(array &$info, $file, $type) {
     // module. This ensures that modules that define both an importer and a
     // plugin can still be disabled.
     if ($importer->export_type == EXPORT_IN_CODE) {
-      $configs = ctools_export_load_object('feeds_importer', 'names', array($importer->id));
+      $configs = backdrop_tools_export_load_object('feeds_importer', 'names', array($importer->id));
       if (isset($configs[$importer->id]) && $configs[$importer->id]->export_module === $file->name) {
         continue;
       }
@@ -867,9 +869,9 @@ function feeds_importer_load_all($load_disabled = FALSE) {
   $feeds = array();
   // This function can get called very early in install process through
   // menu_router_rebuild(). Do not try to include CTools if not available.
-  if (function_exists('ctools_include')) {
-    ctools_include('export');
-    $configs = ctools_export_load_object('feeds_importer', 'all');
+  if (function_exists('backdrop_tools_include')) {
+    backdrop_tools_include('export');
+    $configs = backdrop_tools_export_load_object('feeds_importer', 'all');
     foreach ($configs as $config) {
       if (!empty($config->id) && ($load_disabled || empty($config->disabled))) {
         $feeds[$config->id] = feeds_importer($config->id);
@@ -931,8 +933,13 @@ function feeds_cache_clear($rebuild_menu = TRUE) {
   cache_clear_all('_feeds_importer_digest', 'cache');
   backdrop_static_reset('_feeds_importer_digest');
   cache_clear_all('plugins:feeds:plugins', 'cache');
-  ctools_include('export');
-  ctools_export_load_object_reset('feeds_importer');
+  backdrop_tools_include('export');
+  $cache = &backdrop_static('backdrop_tools_export_load_object');
+  $cached_database = &backdrop_static('backdrop_tools_export_load_object_all');
+  $cached_defaults = &backdrop_static('_ctools_export_get_defaults');
+  unset($cache[$table]);
+  unset($cached_database[$table]);
+  unset($cached_defaults[$table]);
   backdrop_static_reset('_node_types_build');
   if ($rebuild_menu) {
     menu_rebuild();
@@ -943,8 +950,8 @@ function feeds_cache_clear($rebuild_menu = TRUE) {
  * Exports a FeedsImporter configuration to code.
  */
 function feeds_export($importer_id, $indent = '') {
-  ctools_include('export');
-  $result = ctools_export_load_object('feeds_importer', 'names', array('id' => $importer_id));
+  backdrop_tools_include('export');
+  $result = backdrop_tools_export_load_object('feeds_importer', 'names', array('id' => $importer_id));
   if (isset($result[$importer_id])) {
     return ctools_export_object('feeds_importer', $result[$importer_id], $indent);
   }
@@ -1044,7 +1051,7 @@ function feeds_item_info_save($entity, $entity_id) {
  *   The unique id of the importer object.
  *
  * @return
- *   A FeedsImporter object or an object of a class defined by the Drupal
+ *   A FeedsImporter object or an object of a class defined by the backdrop
  *   variable 'feeds_importer_class'. There is only one importer object
  *   per $id system-wide.
  */
@@ -1061,7 +1068,7 @@ function feeds_importer($id) {
  *   The node id of a feed node if the source is attached to a feed node.
  *
  * @return
- *   A FeedsSource object or an object of a class defiend by the Drupal
+ *   A FeedsSource object or an object of a class defiend by the backdrop
  *   variable 'source_class'.
  */
 function feeds_source($importer_id, $feed_nid = 0) {
@@ -1080,10 +1087,14 @@ function feeds_source($importer_id, $feed_nid = 0) {
  *   A FeedsPlugin object.
  */
 function feeds_plugin($plugin, $id) {
-  ctools_include('plugins');
+  backdrop_tools_include('plugins');
 
-  if ($class = ctools_plugin_load_class('feeds', 'plugins', $plugin, 'handler')) {
-    return FeedsPlugin::instance($class, $id, ctools_get_plugins('feeds', 'plugins', $plugin));
+  //if ($class = ctools_plugin_load_class('feeds', 'plugins', $plugin, 'handler')) {
+    //return FeedsPlugin::instance($class, $id, backdrop_tools_get_plugins('feeds', 'plugins', $plugin));
+  //}
+
+  if (class_exists($plugin)) {
+    return FeedsPlugin::instance($plugin, $id, backdrop_tools_get_plugins('feeds', 'plugins', $plugin));
   }
 
   $args = array('%plugin' => $plugin, '@id' => $id);
@@ -1095,9 +1106,9 @@ function feeds_plugin($plugin, $id) {
     backdrop_set_message(t('Missing Feeds plugin %plugin. Please contact your site administrator.', $args), 'warning', FALSE);
   }
 
-  $class = ctools_plugin_load_class('feeds', 'plugins', 'FeedsMissingPlugin', 'handler');
+  //$class = ctools_plugin_load_class('feeds', 'plugins', 'FeedsMissingPlugin', 'handler');
 
-  return FeedsPlugin::instance($class, $id);
+  return FeedsPlugin::instance('FeedsMissingPlugin', $id);
 }
 
 /**
@@ -1253,7 +1264,7 @@ function feeds_alter($type, &$data) {
  *
  * @see valid_url().
  *
- * @todo Replace with valid_url() when http://drupal.org/node/295021 is fixed.
+ * @todo Replace with valid_url() when http://backdrop.org/node/295021 is fixed.
  */
 function feeds_valid_url($url, $absolute = FALSE) {
   if ($absolute) {
@@ -1400,4 +1411,406 @@ function feeds_file_download($uri) {
 function feeds_api_version() {
   $version = feeds_ctools_plugin_api('feeds', 'plugins');
   return $version['version'];
+}
+
+function backdrop_tools_export_load_object($table, $type = 'all', $args = array()) {
+  $cache = &backdrop_static(__FUNCTION__);
+  $cache_table_exists = &backdrop_static(__FUNCTION__ . '_table_exists', array());
+  $cached_database = &backdrop_static('backdrop_tools_export_load_object_all');
+
+  if (!array_key_exists($table, $cache_table_exists)) {
+    $cache_table_exists[$table] = db_table_exists($table);
+  }
+
+  $schema = backdrop_get_schema($table);
+  $schema['export'] += array(
+    'key' => 'name', 
+    'key name' => 'Name', 
+    'object' => 'stdClass', 
+    'status' => 'default_' . $table, 
+    'default hook' => 'default_' . $table, 
+    'can disable' => TRUE, 
+    'identifier' => $table, 
+    'primary key' => !empty($schema['primary key']) ? $schema['primary key'][0] : '', 
+    'bulk export' => TRUE, 
+    'list callback' => "$schema[module]_{$table}_list", 
+    'to hook code callback' => "$schema[module]_{$table}_to_hook_code", 
+    'cache defaults' => FALSE, 
+    'default cache bin' => 'cache', 
+    'export type string' => 'type',
+  );
+  
+  if (empty($schema) || !$cache_table_exists[$table]) {
+    return array();
+  }
+
+  $export = $schema['export'];
+
+  if (!isset($cache[$table])) {
+    $cache[$table] = array();
+  }
+
+  // If fetching all and cached all, we've done so and we are finished.
+  if ($type == 'all' && !empty($cached_database[$table])) {
+    return $cache[$table];
+  }
+
+  $return = array();
+
+  // Don't load anything we've already cached.
+  if ($type == 'names' && !empty($args)) {
+    foreach ($args as $id => $name) {
+      if (isset($cache[$table][$name])) {
+        $return[$name] = $cache[$table][$name];
+        unset($args[$id]);
+      }
+    }
+
+    // If nothing left to load, return the result.
+    if (empty($args)) {
+      return $return;
+    }
+  }
+
+  // Build the query
+  $query = db_select($table, 't__0')->fields('t__0');
+  $alias_count = 1;
+  if (!empty($schema['join'])) {
+    foreach ($schema['join'] as $join_key => $join) {
+      if ($join_schema = backdrop_get_schema($join['table'])) {
+        $query->join($join['table'], 't__' . $alias_count, 't__0.' . $join['left_key'] . ' = ' . 't__' . $alias_count . '.' . $join['right_key']);
+        $query->fields('t__' . $alias_count);
+        $alias_count++;
+
+        // Allow joining tables to alter the query through a callback.
+        if (isset($join['callback']) && function_exists($join['callback'])) {
+          $join['callback']($query, $schema, $join_schema);
+        }
+      }
+    }
+  }
+
+  $conditions = array();
+  $query_args = array();
+
+  // If they passed in names, add them to the query.
+  if ($type == 'names') {
+    $query->condition($export['key'], $args, 'IN');
+  }
+  else if ($type == 'conditions') {
+    foreach ($args as $key => $value) {
+      if (isset($schema['fields'][$key])) {
+        $query->condition($key, $value);
+      }
+    }
+  }
+
+  $result = $query->execute();
+
+  $status = array();
+  // Unpack the results of the query onto objects and cache them.
+  foreach ($result as $data) {
+    $object = backdrop_tools_export_unpack_object($schema, $data, $export['object']);
+
+    $object->table = $table;
+    $object->{$export['export type string']} = t('Normal');
+    $object->export_type = EXPORT_IN_DATABASE;
+    // Determine if default object is enabled or disabled.
+    if (isset($status[$object->{$export['key']}])) {
+      $object->disabled = $status[$object->{$export['key']}];
+    }
+
+    $cache[$table][$object->{$export['key']}] = $object;
+    if ($type == 'conditions') {
+      $return[$object->{$export['key']}] = $object;
+    }
+  }
+
+  if ($type == 'names' && !empty($args) && !empty($export['cache defaults'])) {
+      foreach ($args as $name) {
+        $keys[] = 'ctools_export:' . $table . ':' . $name;
+      }
+
+      $data = cache_get_multiple($keys, $export['default cache bin']);
+
+      // Cache hits remove the $key from $keys by reference. Cache
+      // misses do not. A cache miss indicates we may have to rebuild.
+      if (!empty($keys)) {
+        return _ctools_export_get_defaults($table, $export);
+      }
+
+      // Now, translate the returned cache objects to actual objects.
+      $cache = array();
+      foreach ($data as $cached_object) {
+        $cache[$cached_object->data->{$export['key']}] = $cached_object->data;
+      }
+
+    $defaults = $cache;
+  }
+  else {
+    $defaults = _ctools_export_get_defaults($table, $export);
+  }
+
+  if ($defaults) {
+    foreach ($defaults as $object) {
+      if ($type == 'conditions') {
+        // if this does not match all of our conditions, skip it.
+        foreach ($args as $key => $value) {
+          if (!isset($object->$key)) {
+            continue 2;
+          }
+          if (is_array($value)) {
+            if (!in_array($object->$key, $value)) {
+              continue 2;
+            }
+          }
+          else if ($object->$key != $value) {
+            continue 2;
+          }
+        }
+      }
+      else if ($type == 'names') {
+        if (!in_array($object->{$export['key']}, $args)) {
+          continue;
+        }
+      }
+
+      // Determine if default object is enabled or disabled.
+      if (isset($status[$object->{$export['key']}])) {
+        $object->disabled = $status[$object->{$export['key']}];
+      }
+
+      if (!empty($cache[$table][$object->{$export['key']}])) {
+        $cache[$table][$object->{$export['key']}]->{$export['export type string']} = t('Overridden');
+        $cache[$table][$object->{$export['key']}]->export_type |= EXPORT_IN_CODE;
+        $cache[$table][$object->{$export['key']}]->export_module = isset($object->export_module) ? $object->export_module : NULL;
+        if ($type == 'conditions') {
+          $return[$object->{$export['key']}] = $cache[$table][$object->{$export['key']}];
+        }
+      }
+      else {
+        $object->{$export['export type string']} = t('Default');
+        $object->export_type = EXPORT_IN_CODE;
+        $object->in_code_only = TRUE;
+        $object->table = $table;
+
+        $cache[$table][$object->{$export['key']}] = $object;
+        if ($type == 'conditions') {
+          $return[$object->{$export['key']}] = $object;
+        }
+      }
+    }
+  }
+
+  // If fetching all, we've done so and we are finished.
+  if ($type == 'all') {
+    $cached_database[$table] = TRUE;
+    return $cache[$table];
+  }
+
+  if ($type == 'names') {
+    foreach ($args as $name) {
+      if (isset($cache[$table][$name])) {
+        $return[$name] = $cache[$table][$name];
+      }
+    }
+  }
+
+  // For conditions,
+  return $return;
+}
+
+function backdrop_tools_export_unpack_object($schema, $data, $object = 'stdClass') {
+  if (is_string($object)) {
+    if (class_exists($object)) {
+      $object = new $object;
+    }
+    else {
+      $object = new stdClass;
+    }
+  }
+
+  // Go through our schema and build correlations.
+  foreach ($schema['fields'] as $field => $info) {
+    if (isset($data->$field)) {
+      $object->$field = empty($info['serialize']) ? $data->$field : unserialize($data->$field);
+    }
+    else {
+      $object->$field = NULL;
+    }
+  }
+
+  if (isset($schema['join'])) {
+    foreach ($schema['join'] as $join_key => $join) {
+      //$join_schema = ctools_export_get_schema($join['table']);
+      $join_schema = backdrop_get_schema($join['table']);
+      if (!empty($join['load'])) {
+        foreach ($join['load'] as $field) {
+          $info = $join_schema['fields'][$field];
+          $object->$field = empty($info['serialize']) ? $data->$field : unserialize($data->$field);
+        }
+      }
+    }
+  }
+
+  return $object;
+}
+
+function _ctools_export_get_defaults($table, $export) {
+  $cache = &backdrop_static(__FUNCTION__, array());
+
+  // If defaults may be cached, first see if we can load from cache.
+  if (!isset($cache[$table]) && !empty($export['cache defaults'])) {
+    $cache[$table] = _ctools_export_get_defaults_from_cache($table, $export);
+  }
+
+  if (!isset($cache[$table])) {
+    // If we're caching, attempt to get a lock. We will wait a short time
+    // on the lock, but not too long, because it's better to just rebuild
+    // and throw away results than wait too long on a lock.
+    if (!empty($export['cache defaults'])) {
+      for ($counter = 0; !($lock = lock_acquire('ctools_export:' . $table)) && $counter > 5; $counter++) {
+        lock_wait('ctools_export:' . $table, 1);
+        ++$counter;
+      }
+    }
+
+    $cache[$table] = array();
+
+    if ($export['default hook']) {
+      $modules = module_implements($export['default hook']);
+
+      foreach ($modules as $module) {
+        $function = $module . '_' . $export['default hook'];
+        if (function_exists($function)) {
+          foreach ((array) $function($export) as $name => $object) {
+            // Record the module that provides this exportable.
+            $object->export_module = $module;
+
+            if (empty($export['api'])) {
+              $cache[$table][$name] = $object;
+            }
+            else {
+              // If version checking is enabled, ensure that the object can be used.
+              if (isset($object->api_version) && 
+                version_compare($object->api_version, $export['api']['minimum_version']) >= 0 && 
+                version_compare($object->api_version, $export['api']['current_version']) <= 0) {
+                $cache[$table][$name] = $object;
+              }
+            }
+          }
+        }
+      }
+
+      backdrop_alter($export['default hook'], $cache[$table]);
+
+      // If we acquired a lock earlier, cache the results and release the
+      // lock.
+      if (!empty($lock)) {
+        // Cache the index.
+        $index = array_keys($cache[$table]);
+        cache_set('ctools_export_index:' . $table, $index, $export['default cache bin']);
+
+        // Cache each object.
+        foreach ($cache[$table] as $name => $object) {
+          cache_set('ctools_export:' . $table . ':' . $name, $object, $export['default cache bin']);
+        }
+        lock_release('ctools_export:' . $table);
+      }
+    }
+  }
+
+  return $cache[$table];
+}
+
+function _ctools_export_get_defaults_from_cache($table, $export) {
+  $data = cache_get('ctools_export_index:' . $table, $export['default cache bin']);
+  if (!$data || !is_array($data->data)) {
+    return;
+  }
+
+  // This is the perfectly valid case where there are no default objects,
+  // and we have cached this state.
+  if (empty($data->data)) {
+    return array();
+  }
+
+  $keys = array();
+  foreach ($data->data as $name) {
+    $keys[] = 'ctools_export:' . $table . ':' . $name;
+  }
+
+  $data = cache_get_multiple($keys, $export['default cache bin']);
+
+  // If any of our indexed keys missed, then we have a fail and we need to
+  // rebuild.
+  if (!empty($keys)) {
+    return;
+  }
+
+  // Now, translate the returned cache objects to actual objects.
+  $cache = array();
+  foreach ($data as $cached_object) {
+    $cache[$cached_object->data->{$export['key']}] = $cached_object->data;
+  }
+
+  return $cache;
+}
+
+function backdrop_tools_include($plugins) {
+  
+}
+
+function backdrop_tools_get_plugins($module, $plugins) {
+  module_load_include('inc', 'feeds', 'feeds.plugins');
+  $plugins = _feeds_feeds_plugins();
+  return $plugins;
+}
+
+function feeds_autoload_info() {
+  return array(
+    'FeedsConfigurable' => 'includes/FeedsConfigurable.inc',
+    'FeedsNotExistingException' => 'includes/FeedsConfigurable.inc',
+    'FeedsImporter' => 'includes/FeedsImporter.inc',
+    'FeedsLockException' => 'includes/FeedsSource.inc',
+    'FeedsSource' => 'includes/FeedsSource.inc',
+    'FeedsSourceInterface' => 'includes/FeedsSource.inc',
+    'HRCurlException' => 'libraries/http_request.inc',
+    'FeedsCSVParser' => 'includes/FeedsCSVParser.inc',
+    'FeedsResult' => 'plugins/FeedsPlugin.inc',
+    'FeedsFetcherResult' => 'plugins/FeedsFetcher.inc',
+    'FeedsFetcher' => 'plugins/FeedsFetcher.inc',
+    'FeedsFileFetcher' => 'plugins/FeedsFileFetcher.inc',
+    'FeedsFileFetcherResult' => 'plugins/FeedsFileFetcher.inc',
+    'FeedsHTTPFetcher' => 'plugins/FeedsHTTPFetcher.inc',
+    'FeedsHTTPFetcherResult' => 'plugins/FeedsHTTPFetcher.inc',
+    'FeedsNodeProcessor' => 'plugins/FeedsNodeProcessor.inc',
+    'FeedsOPMLParser' => 'plugins/FeedsOPMLParser.inc',
+    'FeedsParser' => 'plugins/FeedsParser.inc',
+    'FeedsParserResult' => 'plugins/FeedsParser.inc',
+    'FeedsTermElement' => 'plugins/FeedsParser.inc',
+    'FeedsGeoTermElement' => 'plugins/FeedsParser.inc',
+    'FeedsEnclosure' => 'plugins/FeedsParser.inc',
+    'FeedsDateTimeElement' => 'plugins/FeedsParser.inc',
+    'FeedsDateTime' => 'plugins/FeedsParser.inc',
+    'FeedsPlugin' => 'plugins/FeedsPlugin.inc',
+    'FeedsMissingPlugin' => 'plugins/FeedsPlugin.inc',
+    'FeedsProcessor' => 'plugins/FeedsProcessor.inc',
+    'FeedsValidationException' => 'plugins/FeedsProcessor.inc',
+    'FeedsAccessException' => 'plugins/FeedsProcessor.inc',
+    'FeedsProcessorBundleNotDefined' => 'plugins/FeedsProcessor.inc',
+    'FeedsSimplePieParser' => 'plugins/FeedsSimplePieParser.inc',
+    'FeedsSimplePieEnclosure' => 'plugins/FeedsSimplePieParser.inc',
+    'FeedsSitemapParser' => 'plugins/FeedsSitemapParser.inc',
+    'FeedsSyndicationParser' => 'plugins/FeedsSyndicationParser.inc',
+    'FeedsTermProcessor' => 'plugins/FeedsTermProcessor.inc',
+    'FeedsUserProcessor' => 'plugins/FeedsUserProcessor.inc',
+    'feeds_views_handler_argument_importer_id' => 'views/feeds_views_handler_argument_importer_id.inc',
+    'feeds_views_handler_field_importer_name' => 'views/feeds_views_handler_field_importer_name.inc',
+    'feeds_views_handler_field_log_message' => 'views/feeds_views_handler_field_log_message.inc',
+    'feeds_views_handler_field_severity' => 'views/feeds_views_handler_field_severity.inc',
+    'feeds_views_handler_field_source' => 'views/feeds_views_handler_field_source.inc',
+    'feeds_views_handler_filter_severity' => 'views/feeds_views_handler_filter_severity.inc',
+    'feeds_views_plugin_argument_validate_feed_nid' => 'views/feeds_views_plugin_argument_validate_feed_nid.inc',
+  );
 }

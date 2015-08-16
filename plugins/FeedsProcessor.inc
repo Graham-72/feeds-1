@@ -1147,7 +1147,7 @@ abstract class FeedsProcessor extends FeedsPlugin {
    *   The sanitized string representation of the object.
    */
   protected function exportObjectVars($object) {
-    include_once BACKDROP_ROOT . '/includes/utility.inc';
+    include_once BACKDROP_ROOT . '/core/includes/utility.inc';
 
     $out = is_array($object) ? $object : get_object_vars($object);
     $out = array_filter($out, 'is_scalar');
